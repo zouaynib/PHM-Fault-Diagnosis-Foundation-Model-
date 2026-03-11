@@ -1,0 +1,138 @@
+# ============================================================
+# PHM Foundation Model — Master Configuration (Real Datasets)
+# ============================================================
+
+seed: 42
+
+# --- Data Pipeline ---
+data:
+  target_sample_rate: 25600       # Resample all time-domain signals to this rate (Hz)
+  window_length: 2560             # Samples per window at target rate (= 0.1s at 25.6kHz)
+  cmapss_window_length: 50        # Cycles for CMAPSS (cycle-based, no resampling)
+  stride_divisor: 2               # stride = window_length / stride_divisor
+  hdf5_dir: "data/"               # Directory for per-dataset HDF5 files
+  combined_hdf5: "data/phm_combined.h5"
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+# --- Dataset Definitions (5 real PHM domains) ---
+datasets:
+  - name: "CWRU"
+    phmd_name: "CWRU"
+    domain: "rotating_machinery"
+    original_sampling_freq: 12000.0
+    num_channels: 1               # DE only (most complete channel)
+    signal_columns: ["DE"]
+    tasks:
+      - type: "classification"
+        task_name: "fault"
+        num_classes: 4
+
+  - name: "PRONOSTIA"
+    phmd_name: "PRONOSTIA"
+    domain: "bearing_degradation"
+    original_sampling_freq: 25600.0
+    num_channels: 2
+    signal_columns: ["V_acc", "H_acc"]
+    tasks:
+      - type: "regression"
+        task_name: "rul"
+
+  - name: "CMAPSS"
+    phmd_name: "CMAPSS"
+    domain: "turbofan_engine"
+    original_sampling_freq: 1.0   # cycle-based
+    num_channels: 14              # Key sensor channels (excluding near-constant ones)
+    is_cycle_based: true
+    signal_columns: ["T2", "T24", "T30", "T50", "P2", "P15", "P30", "Nf", "Nc", "Ps30", "phi", "NRf", "NRc", "BPR"]
+    tasks:
+      - type: "classification"
+        task_name: "Fault_type"   # phmd valid tasks: rul, Fault_type
+        num_classes: 2
+      - type: "regression"
+        task_name: "rul"
+
+  # Paderborn (PUBD16) removed — requires manual download from university website
+  # Can be re-added later after manual download
+
+  - name: "MFPT"
+    phmd_name: "MFPT"
+    domain: "rotating_machinery"
+    original_sampling_freq: 97656.0   # 97,656.25 Hz — highest fs in our mix
+    num_channels: 1
+    signal_columns: ["vibration"]     # fallback will activate if name differs
+    tasks:
+      - type: "classification"
+        task_name: "fault"
+        num_classes: 3                # normal, inner race, outer race
+
+# --- Foundation Model (Transformer) ---
+foundation:
+  # Patch embedding
+  d_model: 128
+  patch_size: 64
+  patch_stride: 32
+
+  # CMAPSS-specific patch params (cycle-based)
+  cmapss_patch_size: 5
+  cmapss_patch_stride: 3
+
+  # Transformer encoder
+  num_heads: 8
+  num_layers: 4
+  dim_feedforward: 256
+  dropout: 0.1
+  activation: "gelu"
+
+  # Embeddings
+  freq_embed_dim: 32
+  dataset_embed_dim: 32
+  latent_dim: 128
+
+  # Training
+  epochs: 60
+  batch_size: 128
+  lr: 0.0003
+  weight_decay: 0.01
+  patience: 15
+  warmup_epochs: 5
+  use_mixed_precision: true
+  grad_clip: 1.0
+
+  # Multi-task loss weights
+  cls_loss_weight: 1.0
+  rul_loss_weight: 1.0
+
+# --- RUL Configuration ---
+rul:
+  max_rul_clip: 125              # Piece-wise linear clipping (CMAPSS convention)
+  normalize: true                # Min-max normalize RUL to [0, 1]
+
+# --- Baseline CNN ---
+baseline:
+  num_blocks: 5
+  channels: [32, 64, 128, 128, 64]
+  kernel_size: 7
+  dropout: 0.3
+  epochs: 40
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 8
+
+# --- Fine-tuning ---
+finetune:
+  freeze_epochs: 10
+  partial_epochs: 15
+  full_epochs: 30
+  lr_head: 0.001
+  lr_backbone: 0.00005
+  patience: 10
+
+# --- Ablation ---
+ablation:
+  window_lengths: [1280, 2560, 5120]
+  low_data_fractions: [0.1, 0.2, 0.5, 1.0]
+  patch_sizes: [32, 64, 128]
+  num_layers_sweep: [2, 4, 6]

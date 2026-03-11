@@ -1,0 +1,13 @@
+__pycache__/
+ablation_plots/
+checkpoints/
+data/
+logs/
+plots/
+results/
+*.log
+*.err
+.vscode-server/
+pip_cache/
+pip_tmp/
+.ipynb_checkpoints/
